@@ -31,6 +31,10 @@ defmodule Bgp.Peer do
     }
   end
 
+  #
+  # Client-side
+  #
+
   @doc """
   Start peer with options.
   """
@@ -39,26 +43,36 @@ defmodule Bgp.Peer do
     GenServer.start_link(__MODULE__, opts)
   end
 
+  #
+  # Server-side
+  #
+
   def init(opts) do
     conn_opts = [
       active: :once, ip: opts.local_address, mode: :binary
     ]
     case :gen_tcp.connect(opts.neighbor, opts.neighbor_port, conn_opts) do
       {:ok, socket} ->
-        #open_msg = Bgp.Protocol.encode(%Bgp.Protocol.OpenOptions{
-        #  bgpid: opts.router_id,
-        #  my_as: opts.local_as,
-        #})
-        #:gen_tcp.send(socket, open_msg)
+        open_msg = Bgp.Protocol.encode(%Bgp.Protocol.OpenOptions{
+          bgpid: opts.router_id,
+          my_as: opts.local_as,
+          params: [
+            Bgp.Protocol.Capability.multiprotocol_ext(1, 1),
+            Bgp.Protocol.Capability.rr_cisco(),
+            Bgp.Protocol.Capability.rr(),
+            Bgp.Protocol.Capability.asn4(opts.local_as),
+            Bgp.Protocol.Capability.add_path(1, 1, 1),
+            Bgp.Protocol.Capability.fqdn("bgpd", "local"),
+            Bgp.Protocol.Capability.graceful_restart(120),
+          ],
+        })
+        :gen_tcp.send(socket, open_msg)
         {:ok, %State{options: opts, socket: socket}}
       {:error, reason} ->
         {:stop, reason}
     end
   end
 
-  #
-  # Server-side
-  #
   def handle_info({:tcp_error, _socket, reason}, state) do
     {:stop, "error: #{reason}", state}
   end

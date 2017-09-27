@@ -9,7 +9,6 @@ defmodule Bgp.Protocol do
   @type mh_length :: 0..65535
   @type mh_type :: 0..255
 
-  @spec message_header(mh_length, mh_type) :: binary
   @doc """
   BGP message header:
   * Marker: 16 bytes filled with ones.
@@ -18,9 +17,10 @@ defmodule Bgp.Protocol do
   * Type: message type. Possible values: (1) Open, (2) Update, (3) Notification
           and (4) Keepalive (RFC 2918 defines one more type code).
   """
+  @spec message_header(mh_length, mh_type) :: binary
   def message_header(length, type), do: <<
     0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32,
-    length::16, type::8
+    length + 19::16, type::8
   >>
 
 
@@ -36,8 +36,7 @@ defmodule Bgp.Protocol do
       version: version,
       holdtime: holdtime,
       bgpid: Bgp.Protocol.router_id,
-      paramslen: paramslen,
-      params: binary,
+      params: list(binary),
     }
   end
 
@@ -53,28 +52,32 @@ defmodule Bgp.Protocol do
   """
   @spec encode(OpenOptions.t) :: binary
   def encode(%OpenOptions{} = open_opts) do
+    params = Enum.reduce(open_opts.params, <<>>, fn(param, acc) ->
+      acc <> param
+    end)
     open_header = <<
-      open_opts.version::8, open_opts.my_as::16, open_opts.holdtime::16,
-      open_opts.bgpid::32, open_opts.paramslen::8
+      open_opts.version::8,
+      open_opts.my_as::16,
+      open_opts.holdtime::16,
+      open_opts.bgpid::32,
+      byte_size(params)::8,
+      params::binary
     >>
-    open_message = open_header <> open_opts.params
-    message_header(byte_size(open_message), 1) <> open_message
+    message_header(byte_size(open_header), 1) <> open_header
   end
 
-  # RFC 5492
   defmodule Param do
+    @enforce_keys [:type, :value]
     defstruct [type: nil, value: %{}]
-  end
-  defmodule Capability do
-    defstruct [type: nil, value: %{}]
+
+    @type param_type :: 0..255
+    @type t :: %Param{
+      type: param_type,
+      value: any,
+    }
   end
 
-  defp decode_capability(<<type::8, length::8, data::binary>>) do
-    <<value::bytes-size(length), _::binary>> = data
-    {:ok, %Capability{type: type, value: value}}
-  end
-  defp decode_capability(_), do: :error
-
+  @spec decode_params(binary, list(Param.t)) :: {:ok, list(Param.t)} | :error
   defp decode_params(<<type::8, length::8, data::binary>>, acc) do
     # Extract param value and point tail to next param
     <<value::bytes-size(length), tail::binary>> = data
@@ -82,17 +85,18 @@ defmodule Bgp.Protocol do
     # Store param and go to the next one
     case type do
       2 -> # Capability (RFC 4271)
-        case decode_capability(data) do
+        case Bgp.Protocol.Capability.decode(data) do
           {:ok, cap} ->
-            decode_params(tail, [%Param{type: :capability, value: cap} | acc])
+            decode_params(tail, [%Param{type: type, value: cap} | acc])
           :error ->
-            decode_params(tail, [%Param{type: :unknown, value: value} | acc])
+            decode_params(tail, [%Param{type: type, value: value} | acc])
         end
       _ -> # Unhandled
-        decode_params(tail, [%Param{type: :unknown, value: value} | acc])
+        decode_params(tail, [%Param{type: type, value: value} | acc])
     end
   end
   defp decode_params(<<>>, acc), do: {:ok, acc}
+  defp decode_params(_, _), do: :error
   defp decode_params(data), do: decode_params(data, [])
 
   @doc """
