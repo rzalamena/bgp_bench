@@ -33,6 +33,11 @@ defmodule Bgp.Protocol do
     length + 19::16, type::8
   >>
 
+  @doc """
+  Encodes a keepalive message.
+  """
+  @spec keepalive() :: binary
+  def keepalive(), do: message_header(0, 4)
 
   defmodule OpenOptions do
     @enforce_keys [:bgpid, :my_as]

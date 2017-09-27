@@ -84,6 +84,9 @@ defmodule Bgp.Peer do
   def handle_info({:tcp, socket, data}, state) do
     Bgp.Protocol.decode(data)
 
+    keepalive_msg = Bgp.Protocol.keepalive()
+    :gen_tcp.send(socket, keepalive_msg)
+
     <<paddr::32>> = <<10, 0, 100, 10>>
     update_msg = Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
       pattrs: [
