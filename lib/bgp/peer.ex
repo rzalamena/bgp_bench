@@ -53,7 +53,7 @@ defmodule Bgp.Peer do
     ]
     case :gen_tcp.connect(opts.neighbor, opts.neighbor_port, conn_opts) do
       {:ok, socket} ->
-        open_msg = Bgp.Protocol.encode(%Bgp.Protocol.OpenOptions{
+        open_msg = Bgp.Protocol.Open.encode(%Bgp.Protocol.Open.Options{
           bgpid: opts.router_id,
           my_as: opts.local_as,
           params: [
