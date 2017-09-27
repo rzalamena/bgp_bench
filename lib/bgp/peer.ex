@@ -81,8 +81,22 @@ defmodule Bgp.Peer do
     {:stop, "connection closed", state}
   end
 
-  def handle_info({:tcp, _socket, data}, state) do
+  def handle_info({:tcp, socket, data}, state) do
     Bgp.Protocol.decode(data)
+
+    <<paddr::32>> = <<10, 0, 100, 10>>
+    update_msg = Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
+      pattrs: [
+        Bgp.Protocol.Update.pattr_origin(0),
+        Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
+        Bgp.Protocol.Update.pattr_nexthop(
+          Bgp.Protocol.ip4_to_integer(state.options.local_address)),
+      ],
+      prefix: paddr,
+      prefixlen: 32,
+    })
+    :gen_tcp.send(socket, update_msg)
+
     {:noreply, state}
   end
 end

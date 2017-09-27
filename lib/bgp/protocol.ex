@@ -9,6 +9,16 @@ defmodule Bgp.Protocol do
   @type mh_length :: 0..65535
   @type mh_type :: 0..255
 
+  @spec ip4_to_integer(:inet.ip4_address) :: non_neg_integer
+  def ip4_to_integer(ip4) do
+    oct1 = elem(ip4, 0)
+    oct2 = elem(ip4, 1)
+    oct3 = elem(ip4, 2)
+    oct4 = elem(ip4, 3)
+    <<ip4::32>> = <<oct1::8, oct2::8, oct3::8, oct4::8>>
+    ip4
+  end
+
   @doc """
   BGP message header:
   * Marker: 16 bytes filled with ones.
