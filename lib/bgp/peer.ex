@@ -3,6 +3,7 @@ defmodule Bgp.Peer do
   BGP peer handling library.
   """
   use GenServer
+  require Logger
 
   defmodule Options do
     @enforce_keys [:neighbor, :remote_as, :local_address, :local_as, :router_id]
@@ -21,13 +22,14 @@ defmodule Bgp.Peer do
 
   defmodule State do
     @enforce_keys [:options]
-    defstruct options: nil, socket: nil, bstate: :idle
+    defstruct options: nil, socket: nil, bstate: :open_sent, msgtail: <<>>
 
-    @type bgp_state :: :idle | :open_sent | :established
+    @type bgp_state :: :open_sent | :established
     @type t :: %State{
       options: Options.t,
       socket: port,
       bstate: bgp_state,
+      msgtail: binary,
     }
   end
 
@@ -81,25 +83,95 @@ defmodule Bgp.Peer do
     {:stop, "connection closed", state}
   end
 
-  def handle_info({:tcp, socket, data}, state) do
-    Bgp.Protocol.decode(data)
+  def handle_info({:tcp, _socket, data}, state) do
+    data = state.msgtail <> data
 
-    keepalive_msg = Bgp.Protocol.keepalive()
-    :gen_tcp.send(socket, keepalive_msg)
+    state =
+      case Bgp.Protocol.decode(data) do
+        {:ok, msgs, tail} ->
+          %State{state | msgtail: tail}
+          Enum.reduce(msgs, state, fn(msg, state) ->
+            message_dump(msg)
+            handle_message(state, msg)
+          end)
+        {:error, notificationmsg} ->
+          :gen_tcp.send(state.socket, notificationmsg)
+          state
+      end
 
-    <<paddr::32>> = <<10, 0, 100, 10>>
-    update_msg = Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
-      pattrs: [
-        Bgp.Protocol.Update.pattr_origin(0),
-        Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
-        Bgp.Protocol.Update.pattr_nexthop(
-          Bgp.Protocol.ip4_to_integer(state.options.local_address)),
-      ],
-      prefix: paddr,
-      prefixlen: 32,
-    })
-    :gen_tcp.send(socket, update_msg)
+    # Ask for one more message
+    :inet.setopts(state.socket, active: :once)
 
     {:noreply, state}
+  end
+
+  @spec handle_message(State.t, Bgp.Protocol.Message.t) :: State.t
+  defp handle_message(%State{bstate: :open_sent} = state, msg) do
+    case msg.type do
+      :open ->
+        # BGP requires the first message after the OPEN to be a KEEPALIVE.
+        Logger.info(fn -> "-> KEEPALIVE" end)
+        :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
+        %State{state | bstate: :established}
+
+      _ ->
+        state
+    end
+  end
+
+  defp handle_message(%State{bstate: :established} = state, msg) do
+    case msg.type do
+      :keepalive ->
+        Logger.info(fn -> "-> KEEPALIVE" end)
+        :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
+        %State{state | bstate: :established}
+
+      _ ->
+        Logger.info(fn -> "-> UPDATE 10.0.100.10/32 \"2\" IGP NEXTHOP \"10.0.2.2\"" end)
+        <<paddr::32>> = <<10, 0, 100, 10>>
+        :gen_tcp.send(state.socket, Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
+          pattrs: [
+            Bgp.Protocol.Update.pattr_origin(0),
+            Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
+            Bgp.Protocol.Update.pattr_nexthop(
+              Bgp.Protocol.ip4_to_integer({10, 0, 2, 2})),
+          ],
+          prefix: paddr,
+          prefixlen: 32,
+        }))
+        state
+    end
+  end
+
+  #
+  # Debug messages
+  #
+  defp message_dump(%Bgp.Protocol.Message{} = msg) do
+    case msg.type do
+      :open ->
+        message_dump(msg.value)
+      :update ->
+        Logger.info(fn -> "<- UPDATE" end)
+      :notification ->
+        Logger.info(fn -> "<- NOTIFICATION" end)
+      :keepalive ->
+        Logger.info(fn -> "<- KEEPALIVE" end)
+      _ ->
+        Logger.info(fn -> "<- UNKNOWN" end)
+    end
+  end
+
+  defp message_dump(%Bgp.Protocol.Open.Message{} = msg) do
+    Logger.info(fn ->
+      Enum.reduce(msg.params,
+        "<- OPEN: Version #{msg.version} | Remote ASN #{msg.remote_as} | " <>
+        "Holdtime #{msg.holdtime} | Router ID #{msg.routerid} | " <>
+        "params:\n", fn(param, acc) ->
+          case param.type do
+            2 -> acc <> "Capability type #{param.value.type}\n"
+            _ -> acc <> "Unknown (#{param.type}) type\n"
+          end
+        end)
+    end)
   end
 end
