@@ -26,6 +26,10 @@ defmodule Bgp.Protocol.Open do
     }
   end
 
+  defmodule Message do
+    defstruct [:version, :remote_as, :holdtime, :routerid, :params]
+  end
+
   @doc """
   OPEN Message Format:
   * Version: 1 byte unsigned integer. Current version is 4.
@@ -72,5 +76,44 @@ defmodule Bgp.Protocol.Open do
   end
   defp decode_params(<<>>, acc), do: {:ok, acc}
   defp decode_params(_, _), do: :error
-  def decode_params(data), do: decode_params(data, [])
+
+  @spec decode_params_data(binary, non_neg_integer) ::
+    {:ok, list(Param.t)} | :error
+  defp decode_params_data(data, length) do
+    if byte_size(data) != length do
+      :error
+    else
+      decode_params(data, [])
+    end
+  end
+
+  @spec decode(binary) :: {:ok, Bgp.Protocol.Message.t} | {:error, binary}
+  def decode(<<data::binary>>) do
+    <<
+      version::8,
+      remote_as::16,
+      holdtime::16,
+      routerid::32,
+      paramslen::8,
+      params::binary
+    >> = data
+
+    case decode_params_data(params, paramslen) do
+      {:ok, params} ->
+        {:ok, %Bgp.Protocol.Message{
+          type: :open,
+          value: %Message{
+            version: version,
+            remote_as: remote_as,
+            holdtime: holdtime,
+            routerid: routerid,
+            params: params,
+          }
+        }
+      }
+      :error ->
+        {:error, Bgp.Protocol.notification(2, 4)}
+    end
+  end
+  def decode(_), do: {:error, Bgp.Protocol.notification(1, 3)}
 end

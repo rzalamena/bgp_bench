@@ -2,6 +2,16 @@ defmodule Bgp.Protocol do
   @moduledoc """
   BGP wire protocol library.
   """
+  defmodule Message do
+    @enforce_keys [:type, :value]
+    defstruct [type: nil, value: nil]
+
+    @type message_type :: :open | :update | :notification | :keepalive
+    @type t :: %Message{
+      type: message_type,
+      value: any,
+    }
+  end
 
   @type as_number :: 0..65535
   @type router_id :: 0..4294967295
@@ -36,46 +46,71 @@ defmodule Bgp.Protocol do
   >>
 
   @doc """
+  Encodes a notification message.
+
+  `code` possible values:
+  (1) message header error, (2) OPEN message error, (3) UPDATE message error,
+  (4) Holdtime expired, (5) finite state machine error and (6) Cease.
+  """
+  @spec notification(non_neg_integer, non_neg_integer, binary) :: binary
+  def notification(code, subcode, data \\ <<>>) do
+    notification = <<
+      code::8,
+      subcode::8,
+      data::binary
+    >>
+    message_header(byte_size(notification), 3) <> notification
+  end
+
+  @doc """
   Encodes a keepalive message.
   """
   @spec keepalive() :: binary
   def keepalive(), do: message_header(0, 4)
 
-  @doc """
-  Decode a message.
-  """
-  def decode(<<0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, data::binary>>) do
-    <<length::16, type::8, tail::binary>> = data
+  defp decode(<<
+    0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32,
+    length::16, type::8, data::binary
+  >>, acc) when length >= 19 do
+    taillen = length - 19
+    <<value::bytes-size(taillen), tail::binary>> = data
 
     case type do
       1 ->
-        <<
-          version::8,
-          remote_as::16,
-          holdtime::16,
-          routerid::32,
-          plen::8,
-          params::binary
-        >> = tail
-        IO.write "<- Open (length #{length}, version #{version}, " <>
-          "remote_as #{remote_as}, holdtime #{holdtime}, " <>
-          "routerid #{routerid}, parameters length #{plen}, params: "
-        case Bgp.Protocol.Open.decode_params(params) do
-          {:ok, params} ->
-            Enum.each(params, fn x ->
-              IO.write "#{x.type}|"
-            end)
-            IO.write ")\n"
+        case Bgp.Protocol.Open.decode(value) do
+          {:ok, openmsg} ->
+            decode(tail, [openmsg | acc])
+          {:error, notificationmsg} ->
+            {:error, notificationmsg}
         end
       2 ->
-        IO.puts "<- Update | Length #{length}"
+        # TODO decode update messages value
+        decode(tail, [%Message{type: :update, value: <<>>} | acc])
       3 ->
-        IO.puts "<- Notification | Length #{length}"
+        # TODO decode notification messages value
+        decode(tail, [%Message{type: :notification, value: <<>>} | acc])
       4 ->
-        IO.puts "<- Keepalive | Length #{length}"
+        decode(tail, [%Message{type: :keepalive, value: <<>>} | acc])
       _ ->
-        IO.puts "<- Unknown message type"
+        {:error, notification(1, 3)}
     end
   end
-  def decode(_), do: :error
+
+  # Invalid message length
+  defp decode(<<
+    0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32,
+    length::16, _::8, _::binary
+  >>, _) when length < 19, do: {:error, notification(1, 2)}
+
+  # End of valid data or insufficient data
+  defp decode(<<data::binary>>, acc), do: {:ok, acc, data}
+
+  @doc """
+  Decode a message.
+
+  Returns `{:ok, message_list, data_tail}` on success with zero or more messages
+  parsed, otherwise `{:error, notification_message}` on unrecoverable error.
+  """
+  @spec decode(binary) :: {:ok, list(Message.t), binary} | {:error, binary}
+  def decode(<<data::binary>>), do: decode(data, [])
 end
