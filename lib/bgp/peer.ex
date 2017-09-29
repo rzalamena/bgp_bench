@@ -8,7 +8,8 @@ defmodule Bgp.Peer do
   defmodule Options do
     @enforce_keys [:neighbor, :remote_as, :local_address, :local_as, :router_id]
     defstruct neighbor: nil, neighbor_port: 179, remote_as: nil,
-      local_address: nil, local_as: nil, router_id: nil
+      local_address: nil, local_as: nil, router_id: nil,
+      prefix_start: {10, 0, 0, 1}, prefix_amount: 0
 
     @type t :: %Options{
       neighbor: :inet.ip4_address,
@@ -17,6 +18,8 @@ defmodule Bgp.Peer do
       local_address: :inet.ip4_address,
       local_as: Bgp.Protocol.as_number,
       router_id: Bgp.Protocol.router_id,
+      prefix_start: :inet.ip4_address,
+      prefix_amount: non_neg_integer,
     }
   end
 
@@ -97,6 +100,43 @@ defmodule Bgp.Peer do
     }}
   end
 
+  def handle_info(:send_route, state) do
+    Logger.debug(fn ->
+      prefix = :inet.ntoa(state.options.prefix_start)
+      my_address = :inet.ntoa(state.options.local_address)
+      "-> UPDATE PREFIX #{prefix}/32 PATH \"#{state.options.local_as}\" " <>
+      "IGP NEXTHOP #{my_address}"
+    end)
+
+    prefix = state.options.prefix_start
+    <<prefix_address::32>> = <<
+      elem(prefix, 0)::8,
+      elem(prefix, 1)::8,
+      elem(prefix, 2)::8,
+      elem(prefix, 3)::8
+    >>
+    :gen_tcp.send(state.socket, Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
+      pattrs: [
+        Bgp.Protocol.Update.pattr_origin(0),
+        Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
+        Bgp.Protocol.Update.pattr_nexthop(
+          Bgp.Protocol.ip4_to_integer(state.options.local_address)),
+      ],
+      prefix: prefix_address,
+      prefixlen: 32,
+    }))
+
+    # Update options
+    state = put_in(state.options.prefix_start, Bgp.Protocol.ip4_next(prefix))
+    state = put_in(state.options.prefix_amount, state.options.prefix_amount - 1)
+
+    # Schedule next route send
+    if state.options.prefix_amount > 0, do:
+      Process.send(self(), :send_route, [])
+
+    {:noreply, state}
+  end
+
   def handle_info({:tcp_error, _socket, reason}, state) do
     {:stop, "error: #{reason}", state}
   end
@@ -133,6 +173,7 @@ defmodule Bgp.Peer do
       :open ->
         # BGP requires the first message after the OPEN to be a KEEPALIVE.
         Process.send(self(), :keepalive, [])
+        Process.send(self(), :send_route, [])
         %State{state | bstate: :established, holdtime: msg.value.holdtime}
 
       _ ->
@@ -143,18 +184,6 @@ defmodule Bgp.Peer do
   defp handle_message(%State{bstate: :established} = state, msg) do
     case msg.type do
       _ ->
-        Logger.info(fn -> "-> UPDATE 10.0.100.10/32 \"2\" IGP NEXTHOP \"10.0.2.2\"" end)
-        <<paddr::32>> = <<10, 0, 100, 10>>
-        :gen_tcp.send(state.socket, Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
-          pattrs: [
-            Bgp.Protocol.Update.pattr_origin(0),
-            Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
-            Bgp.Protocol.Update.pattr_nexthop(
-              Bgp.Protocol.ip4_to_integer({10, 0, 2, 2})),
-          ],
-          prefix: paddr,
-          prefixlen: 32,
-        }))
         state
     end
   end

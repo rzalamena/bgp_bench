@@ -30,6 +30,16 @@ defmodule Bgp.Protocol do
   end
 
   @doc """
+  Gets the next IP address tuple.
+  """
+  @spec ip4_next(:inet.ip4_address, non_neg_integer) :: :inet.ip4_address
+  def ip4_next(ip4, step \\ 1) do
+    nip4 = ip4_to_integer(ip4) + step
+    <<oct1::8, oct2::8, oct3::8, oct4::8>> = <<nip4::32>>
+    {oct1, oct2, oct3, oct4}
+  end
+
+  @doc """
   BGP message header:
   * Marker: 16 bytes filled with ones.
   * Length: the length of the message including the header. Minimum value is 19
