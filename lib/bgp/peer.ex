@@ -111,7 +111,7 @@ defmodule Bgp.Peer do
     state =
       case Bgp.Protocol.decode(data) do
         {:ok, msgs, tail} ->
-          %State{state | msgtail: tail}
+          state = %State{state | msgtail: tail}
           Enum.reduce(msgs, state, fn(msg, state) ->
             message_dump(msg)
             handle_message(state, msg)

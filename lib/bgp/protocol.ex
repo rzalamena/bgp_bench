@@ -71,7 +71,7 @@ defmodule Bgp.Protocol do
   defp decode(<<
     0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32,
     length::16, type::8, data::binary
-  >>, acc) when length >= 19 do
+  >>, acc) when length >= 19 and byte_size(data) >= (length - 19) do
     taillen = length - 19
     <<value::bytes-size(taillen), tail::binary>> = data
 
