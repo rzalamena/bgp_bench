@@ -52,6 +52,13 @@ defmodule Bgp.Peer do
   # Server-side
   #
 
+  def child_spec(arg), do:
+    %{
+      id: __MODULE__,
+      start: {__MODULE__, :start_link, [arg]},
+      restart: :temporary,
+    }
+
   def init(opts) do
     Process.send(self(), :connect, [])
     {:ok, %State{options: opts}}
