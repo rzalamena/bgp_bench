@@ -1,7 +1,7 @@
 defmodule Bgp.Protocol.Open do
   defmodule Options do
     @enforce_keys [:bgpid, :my_as]
-    defstruct version: 4, holdtime: 30, bgpid: nil, my_as: nil,
+    defstruct version: 4, holdtime: 180, bgpid: nil, my_as: nil,
               paramslen: 0, params: <<>>
 
     @type version :: 0..255

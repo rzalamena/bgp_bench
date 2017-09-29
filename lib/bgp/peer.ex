@@ -22,7 +22,8 @@ defmodule Bgp.Peer do
 
   defmodule State do
     @enforce_keys [:options]
-    defstruct options: nil, socket: nil, bstate: :open_sent, msgtail: <<>>
+    defstruct options: nil, socket: nil, bstate: :open_sent, msgtail: <<>>,
+              holdtime: 180, keepalive_timer: nil
 
     @type bgp_state :: :open_sent | :established
     @type t :: %State{
@@ -30,6 +31,8 @@ defmodule Bgp.Peer do
       socket: port,
       bstate: bgp_state,
       msgtail: binary,
+      holdtime: non_neg_integer,
+      keepalive_timer: reference,
     }
   end
 
@@ -79,6 +82,14 @@ defmodule Bgp.Peer do
     end
   end
 
+  def handle_info(:keepalive, state) do
+    Logger.info(fn -> "-> KEEPALIVE" end)
+    :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
+    {:noreply, %State{state | keepalive_timer:
+      Process.send_after(self(), :keepalive, trunc(state.holdtime / 3) * 1_000)
+    }}
+  end
+
   def handle_info({:tcp_error, _socket, reason}, state) do
     {:stop, "error: #{reason}", state}
   end
@@ -114,9 +125,8 @@ defmodule Bgp.Peer do
     case msg.type do
       :open ->
         # BGP requires the first message after the OPEN to be a KEEPALIVE.
-        Logger.info(fn -> "-> KEEPALIVE" end)
-        :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
-        %State{state | bstate: :established}
+        Process.send(self(), :keepalive, [])
+        %State{state | bstate: :established, holdtime: msg.value.holdtime}
 
       _ ->
         state
@@ -125,11 +135,6 @@ defmodule Bgp.Peer do
 
   defp handle_message(%State{bstate: :established} = state, msg) do
     case msg.type do
-      :keepalive ->
-        Logger.info(fn -> "-> KEEPALIVE" end)
-        :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
-        %State{state | bstate: :established}
-
       _ ->
         Logger.info(fn -> "-> UPDATE 10.0.100.10/32 \"2\" IGP NEXTHOP \"10.0.2.2\"" end)
         <<paddr::32>> = <<10, 0, 100, 10>>
