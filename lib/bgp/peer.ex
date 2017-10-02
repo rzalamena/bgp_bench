@@ -148,10 +148,8 @@ defmodule Bgp.Peer do
   end
 
   def handle_info({:tcp, _socket, data}, state) do
-    data = state.msgtail <> data
-
     state =
-      case Bgp.Protocol.decode(data) do
+      case Bgp.Protocol.decode(state.msgtail <> data) do
         {:ok, msgs, tail} ->
           state = %State{state | msgtail: tail}
           Enum.reduce(msgs, state, fn(msg, state) ->
