@@ -65,30 +65,23 @@ defmodule Bgp.Peer do
   end
 
   def init(opts) do
-    Process.send(self(), :connect, [])
-    {:ok, %State{options: opts}}
-  end
-
-  def handle_info(:connect, state) do
-    conn_opts = [active: :once, ip: state.options.local_address, mode: :binary]
-    neighbor = state.options.neighbor
-    port = state.options.neighbor_port
-    case :gen_tcp.connect(neighbor, port, conn_opts) do
+    conn_opts = [active: :once, ip: opts.local_address, mode: :binary]
+    case :gen_tcp.connect(opts.neighbor, opts.neighbor_port, conn_opts) do
       {:ok, socket} ->
         :gen_tcp.send(socket, Bgp.Protocol.Open.encode(%Bgp.Protocol.Open.Options{
-          bgpid: state.options.router_id,
-          my_as: state.options.local_as,
+          bgpid: opts.router_id,
+          my_as: opts.local_as,
           params: [
             Bgp.Protocol.Capability.multiprotocol_ext(1, 1),
             Bgp.Protocol.Capability.rr_cisco(),
             Bgp.Protocol.Capability.rr(),
-            Bgp.Protocol.Capability.asn4(state.options.local_as),
+            Bgp.Protocol.Capability.asn4(opts.local_as),
             Bgp.Protocol.Capability.add_path(1, 1, 1),
             Bgp.Protocol.Capability.fqdn("bgpd", "local"),
             Bgp.Protocol.Capability.graceful_restart(120),
           ],
         }))
-        {:noreply, %State{state | socket: socket}}
+        {:ok, %State{socket: socket, options: opts}}
       {:error, reason} ->
         {:stop, reason}
     end
