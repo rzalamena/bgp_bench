@@ -55,12 +55,14 @@ defmodule Bgp.Peer do
   # Server-side
   #
 
-  def child_spec(arg), do:
+  def child_spec(arg) do
+    id = :inet.ntoa(arg[:local_address])
     %{
-      id: __MODULE__,
+      id: id,
       start: {__MODULE__, :start_link, [arg]},
       restart: :temporary,
     }
+  end
 
   def init(opts) do
     Process.send(self(), :connect, [])
