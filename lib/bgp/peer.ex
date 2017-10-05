@@ -26,7 +26,7 @@ defmodule Bgp.Peer do
   defmodule State do
     @enforce_keys [:options]
     defstruct options: nil, socket: nil, bstate: :open_sent, msgtail: <<>>,
-              holdtime: 180, keepalive_timer: nil
+              holdtime: 180, keepalive_timer: nil, prefix_cur: 0
 
     @type bgp_state :: :open_sent | :established
     @type t :: %State{
@@ -36,6 +36,7 @@ defmodule Bgp.Peer do
       msgtail: binary,
       holdtime: non_neg_integer,
       keepalive_timer: reference,
+      prefix_cur: non_neg_integer,
     }
   end
 
@@ -73,7 +74,7 @@ defmodule Bgp.Peer do
     conn_opts = [active: :once, ip: state.options.local_address, mode: :binary]
     neighbor = state.options.neighbor
     port = state.options.neighbor_port
-    case :gen_tcp.connect(neighbor, port, conn_opts, 3_000) do
+    case :gen_tcp.connect(neighbor, port, conn_opts, 250) do
       {:ok, socket} ->
         :gen_tcp.send(socket, Bgp.Protocol.Open.encode(%Bgp.Protocol.Open.Options{
           bgpid: state.options.router_id,
@@ -92,7 +93,8 @@ defmodule Bgp.Peer do
 
   def handle_info(:keepalive, state) do
     Logger.info(fn -> "-> KEEPALIVE" end)
-    :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
+    if state.socket != nil, do:
+      :gen_tcp.send(state.socket, Bgp.Protocol.keepalive())
     {:noreply, %State{state | keepalive_timer:
       Process.send_after(self(), :keepalive, trunc(state.holdtime / 3) * 1_000)
     }}
@@ -106,7 +108,7 @@ defmodule Bgp.Peer do
       "IGP NEXTHOP #{my_address}"
     end)
 
-    prefix = state.options.prefix_start
+    prefix = Bgp.Protocol.ip4_next(state.options.prefix_start, state.prefix_cur)
     <<prefix_address::32>> = <<
       elem(prefix, 0)::8,
       elem(prefix, 1)::8,
@@ -125,22 +127,29 @@ defmodule Bgp.Peer do
     }))
 
     # Update options
-    state = put_in(state.options.prefix_start, Bgp.Protocol.ip4_next(prefix))
-    state = put_in(state.options.prefix_amount, state.options.prefix_amount - 1)
+    state = %State{state | prefix_cur: state.prefix_cur + 1}
 
     # Schedule next route send
-    if state.options.prefix_amount > 0, do:
+    if state.prefix_cur < state.options.prefix_amount, do:
       Process.send(self(), :send_route, [])
 
     {:noreply, state}
   end
 
-  def handle_info({:tcp_error, _socket, reason}, state) do
-    {:stop, "error: #{reason}", state}
+  def handle_info({:tcp_error, _socket, _reason}, state) do
+    :gen_tcp.close(state.socket)
+    if state.keepalive_timer != nil, do:
+      Process.cancel_timer(state.keepalive_timer)
+    Process.send(self(), :connect, [])
+    {:noreply, %State{options: state.options}}
   end
 
   def handle_info({:tcp_closed, _socket}, state) do
-    {:stop, "connection closed", state}
+    :gen_tcp.close(state.socket)
+    if state.keepalive_timer != nil, do:
+      Process.cancel_timer(state.keepalive_timer)
+    Process.send(self(), :connect, [])
+    {:noreply, %State{options: state.options}}
   end
 
   def handle_info({:tcp, _socket, data}, state) do
