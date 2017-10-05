@@ -60,7 +60,7 @@ defmodule Bgp.Peer do
     %{
       id: id,
       start: {__MODULE__, :start_link, [arg]},
-      restart: :temporary,
+      restart: :transient,
     }
   end
 
