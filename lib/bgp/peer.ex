@@ -80,12 +80,7 @@ defmodule Bgp.Peer do
           my_as: state.options.local_as,
           params: [
             Bgp.Protocol.Capability.multiprotocol_ext(1, 1),
-            Bgp.Protocol.Capability.rr_cisco(),
-            Bgp.Protocol.Capability.rr(),
             Bgp.Protocol.Capability.asn4(state.options.local_as),
-            Bgp.Protocol.Capability.add_path(1, 1, 1),
-            Bgp.Protocol.Capability.fqdn("bgpd", "local"),
-            Bgp.Protocol.Capability.graceful_restart(120),
           ],
         }))
         {:noreply, %State{state | socket: socket}}
