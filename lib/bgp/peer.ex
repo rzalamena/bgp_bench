@@ -74,7 +74,7 @@ defmodule Bgp.Peer do
     conn_opts = [active: :once, ip: state.options.local_address, mode: :binary]
     neighbor = state.options.neighbor
     port = state.options.neighbor_port
-    case :gen_tcp.connect(neighbor, port, conn_opts, 250) do
+    case :gen_tcp.connect(neighbor, port, conn_opts) do
       {:ok, socket} ->
         :gen_tcp.send(socket, Bgp.Protocol.Open.encode(%Bgp.Protocol.Open.Options{
           bgpid: state.options.router_id,
