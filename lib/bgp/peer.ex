@@ -71,7 +71,7 @@ defmodule Bgp.Peer do
   end
 
   def handle_info(:connect, state) do
-    conn_opts = [active: :once, ip: state.options.local_address, mode: :binary]
+    conn_opts = [active: :true, ip: state.options.local_address, mode: :binary]
     neighbor = state.options.neighbor
     port = state.options.neighbor_port
     case :gen_tcp.connect(neighbor, port, conn_opts) do
@@ -165,9 +165,6 @@ defmodule Bgp.Peer do
           :gen_tcp.send(state.socket, notificationmsg)
           state
       end
-
-    # Ask for one more message
-    :inet.setopts(state.socket, active: :once)
 
     {:noreply, state}
   end
