@@ -1,5 +1,11 @@
 defmodule Bgp.Protocol.Capability do
+  @moduledoc """
+  Capability encoding/decoding for BGP open messages.
+  """
   defmodule Capability do
+    @moduledoc """
+    Capability struct for encoding/decoding.
+    """
     @enforce_keys [:type, :value]
     defstruct [:type, :value]
 

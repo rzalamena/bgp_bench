@@ -1,4 +1,7 @@
 defmodule Bgp.PeerSupervisor do
+  @moduledoc """
+  BGP peer supervisor to make restarts in case of failures.
+  """
   use Supervisor
 
   def start_link(peers) do

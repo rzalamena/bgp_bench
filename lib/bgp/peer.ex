@@ -6,6 +6,9 @@ defmodule Bgp.Peer do
   require Logger
 
   defmodule Options do
+    @moduledoc """
+    BGP peer options.
+    """
     @enforce_keys [:neighbor, :remote_as, :local_address, :local_as, :router_id]
     defstruct neighbor: nil, neighbor_port: 179, remote_as: nil,
       local_address: nil, local_as: nil, router_id: nil,
@@ -24,6 +27,9 @@ defmodule Bgp.Peer do
   end
 
   defmodule State do
+    @moduledoc """
+    BGP peer internal state
+    """
     @enforce_keys [:options]
     defstruct options: nil, socket: nil, bstate: :open_sent, msgtail: <<>>,
               holdtime: 180, keepalive_timer: nil, prefix_cur: 0

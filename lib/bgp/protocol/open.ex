@@ -1,11 +1,17 @@
 defmodule Bgp.Protocol.Open do
+  @moduledoc """
+  BGP Open messages encoding/decoding.
+  """
   defmodule Options do
+    @moduledoc """
+    Open message encode options.
+    """
     @enforce_keys [:bgpid, :my_as]
     defstruct version: 4, holdtime: 180, bgpid: nil, my_as: nil,
               paramslen: 0, params: <<>>
 
     @type version :: 0..255
-    @type holdtime :: 0..65535
+    @type holdtime :: 0..65_535
     @type paramslen :: 0..255
     @type t :: %Options{
       version: version,
@@ -16,6 +22,9 @@ defmodule Bgp.Protocol.Open do
   end
 
   defmodule Param do
+    @moduledoc """
+    Param structure for encoding/decoding.
+    """
     @enforce_keys [:type, :value]
     defstruct [type: nil, value: %{}]
 
@@ -27,6 +36,9 @@ defmodule Bgp.Protocol.Open do
   end
 
   defmodule Message do
+    @moduledoc """
+    Open message structure for pattern matching and accessing data.
+    """
     defstruct [:version, :remote_as, :holdtime, :routerid, :params]
   end
 

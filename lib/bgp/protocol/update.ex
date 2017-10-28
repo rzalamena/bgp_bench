@@ -5,6 +5,9 @@ defmodule Bgp.Protocol.Update do
   use Bitwise
 
   defmodule PathAttribute do
+    @moduledoc """
+    Path attribute options for encoding.
+    """
     @enforce_keys [:type, :flags, :value]
     defstruct [type: nil, flags: nil, value: nil]
 
@@ -18,6 +21,9 @@ defmodule Bgp.Protocol.Update do
   end
 
   defmodule Route do
+    @moduledoc """
+    Route definition for encoding.
+    """
     @enforce_keys [:prefix, :prefixlen]
     defstruct [pattrs: [], prefix: nil, prefixlen: nil]
 

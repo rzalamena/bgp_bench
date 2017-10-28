@@ -3,6 +3,10 @@ defmodule Bgp.Protocol do
   BGP wire protocol library.
   """
   defmodule Message do
+    @moduledoc """
+    Protocol messages retrieval format. This is what is returned when
+    BGP messages are decoded.
+    """
     @enforce_keys [:type, :value]
     defstruct [type: nil, value: nil]
 
@@ -13,8 +17,8 @@ defmodule Bgp.Protocol do
     }
   end
 
-  @type as_number :: 0..65535
-  @type router_id :: 0..4294967295
+  @type as_number :: 0..65_535
+  @type router_id :: 0..4_294_967_295
 
   @doc """
   Converts an IPv4 tuple (erlang IPv4 format) to integer.
@@ -47,7 +51,7 @@ defmodule Bgp.Protocol do
   * Type: message type. Possible values: (1) Open, (2) Update, (3) Notification
           and (4) Keepalive (RFC 2918 defines one more type code).
   """
-  @type mh_length :: 0..65535
+  @type mh_length :: 0..65_535
   @type mh_type :: 0..255
   @spec message_header(mh_length, mh_type) :: binary
   def message_header(length, type), do: <<
