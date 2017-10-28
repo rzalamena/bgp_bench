@@ -101,39 +101,7 @@ defmodule Bgp.Peer do
   end
 
   def handle_info(:send_route, state) do
-    Logger.debug(fn ->
-      prefix = :inet.ntoa(state.options.prefix_start)
-      my_address = :inet.ntoa(state.options.local_address)
-      "-> UPDATE PREFIX #{prefix}/32 PATH \"#{state.options.local_as}\" " <>
-      "IGP NEXTHOP #{my_address}"
-    end)
-
-    prefix = Bgp.Protocol.ip4_next(state.options.prefix_start, state.prefix_cur)
-    <<prefix_address::32>> = <<
-      elem(prefix, 0)::8,
-      elem(prefix, 1)::8,
-      elem(prefix, 2)::8,
-      elem(prefix, 3)::8
-    >>
-    :gen_tcp.send(state.socket, Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
-      pattrs: [
-        Bgp.Protocol.Update.pattr_origin(0),
-        Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
-        Bgp.Protocol.Update.pattr_nexthop(
-          Bgp.Protocol.ip4_to_integer(state.options.local_address)),
-      ],
-      prefix: prefix_address,
-      prefixlen: 32,
-    }))
-
-    # Update options
-    state = %State{state | prefix_cur: state.prefix_cur + 1}
-
-    # Schedule next route send
-    if state.prefix_cur < state.options.prefix_amount, do:
-      Process.send(self(), :send_route, [])
-
-    {:noreply, state}
+    {:noreply, send_update(state)}
   end
 
   def handle_info({:tcp_error, _socket, _reason}, state) do
@@ -167,6 +135,38 @@ defmodule Bgp.Peer do
       end
 
     {:noreply, state}
+  end
+
+  @spec send_update(State.t) :: State.t
+  defp send_update(state) do
+    prefix = Bgp.Protocol.ip4_next(state.options.prefix_start, state.prefix_cur)
+    <<prefix_address::32>> = <<
+      elem(prefix, 0)::8,
+      elem(prefix, 1)::8,
+      elem(prefix, 2)::8,
+      elem(prefix, 3)::8
+    >>
+    case :gen_tcp.send(state.socket, Bgp.Protocol.Update.encode(%Bgp.Protocol.Update.Route{
+      pattrs: [
+        Bgp.Protocol.Update.pattr_origin(0),
+        Bgp.Protocol.Update.pattr_aspath(2, [state.options.local_as]),
+        Bgp.Protocol.Update.pattr_nexthop(
+          Bgp.Protocol.ip4_to_integer(state.options.local_address)),
+      ],
+      prefix: prefix_address,
+      prefixlen: 32,
+    })) do
+      :ok ->
+        state = %State{state | prefix_cur: state.prefix_cur + 1}
+        if state.prefix_cur < state.options.prefix_amount do
+          send_update(state)
+        else
+          state
+        end
+      {:error, _reason} ->
+        Process.send(self(), :send_route, [])
+        state
+    end
   end
 
   @spec handle_message(State.t, Bgp.Protocol.Message.t) :: State.t
