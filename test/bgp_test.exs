@@ -46,4 +46,28 @@ defmodule BgpTest do
       ]
     }
   end
+
+  test "invalid message (length too small)" do
+    msg = <<
+      0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32,
+      18::16, 1::8
+    >>
+
+    assert {:error, _notification} = Bgp.Protocol.decode(msg)
+  end
+
+  test "invalid message (invalid type)" do
+    msg = <<
+      0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32, 0xFFFFFFFF::32,
+      19::16, 0xF0::8
+    >>
+
+    assert {:error, _notification} = Bgp.Protocol.decode(msg)
+  end
+
+  test "invalid message (invalid data)" do
+    msg = <<0::32, 1::32, 2::32, 3::32>>
+
+    assert {:error, _notification} = Bgp.Protocol.decode(msg)
+  end
 end

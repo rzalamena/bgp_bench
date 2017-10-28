@@ -116,6 +116,16 @@ defmodule Bgp.Protocol do
     length::16, _::8, _::binary
   >>, _) when length < 19, do: {:error, notification(1, 2)}
 
+  # Detected invalid message markers
+  defp decode(<<data::binary>>, acc) when byte_size(data) >= 16 do
+    <<m1::32, m2::32, m3::32, m4::32, _tail::binary>> = data
+    if (m1 != 0xFFFFFFFF) and (m2 != m1) and (m3 != m1) and (m4 != m1) do
+      {:error, notification(1, 3)}
+    else
+      {:ok, acc, data}
+    end
+  end
+
   # End of valid data or insufficient data
   defp decode(<<data::binary>>, acc), do: {:ok, acc, data}
 
