@@ -167,6 +167,8 @@ defmodule Bgp.Peer do
         if state.prefix_cur < state.options.prefix_amount do
           send_update(state)
         else
+          # Send End-of-Rib
+          :gen_tcp.send(state.socket, Bgp.Protocol.Update.encode())
           state
         end
       {:error, _reason} ->

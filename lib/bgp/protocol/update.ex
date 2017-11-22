@@ -149,4 +149,14 @@ defmodule Bgp.Protocol.Update do
     >>
     Bgp.Protocol.message_header(byte_size(update_header), 2) <> update_header
   end
+
+  # Handles EoR update messages
+  @spec encode :: binary
+  def encode do
+    update_header = <<
+      0::16, # withdraw length
+      0::16, # attributes length
+    >>
+    Bgp.Protocol.message_header(byte_size(update_header), 2) <> update_header
+  end
 end
